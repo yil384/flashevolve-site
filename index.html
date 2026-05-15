@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlashEvolve — Async Agent Evolution</title>
+  <meta name="description" content="An asynchronous worker-queue framework for LLM agent evolution — 3.5× faster than synchronous GEPA on local vLLM, 4.9× on API serving." />
+  <meta name="keywords" content="FlashEvolve, agent evolution, GEPA, ACE, Meta-Harness, asynchronous, vLLM" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="FlashEvolve — Async Agent Evolution" />
+  <meta property="og:description" content="3.5× faster than synchronous GEPA. Asynchronous workers, language-space staleness repair, speculative stage completion." />
+  <meta property="og:image" content="figures/Figure_4.png" />
+
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Extra UI moves (hover, fade-in, dividers, hero stat colors). style.css must not be edited. -->
+  <style>
+    /* radial gradient hero — extra glow over the base */
+    .hero {
+      background:
+        radial-gradient(900px 400px at 50% -120px, rgba(249, 115, 22, 0.18), transparent 70%),
+        radial-gradient(700px 300px at 80% 120%, rgba(56, 189, 248, 0.10), transparent 70%);
+    }
+    .venue-chip {
+      display: inline-block;
+      padding: 4px 12px; border-radius: 999px;
+      background: rgba(249, 115, 22, 0.13);
+      color: var(--accent);
+      font-size: 12px; font-weight: 600;
+      letter-spacing: 0.6px; text-transform: uppercase;
+      border: 1px solid rgba(249, 115, 22, 0.35);
+      margin: 0 auto 24px;
+    }
+
+    /* hover-scale figure cards */
+    .fig-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+    }
+    .fig-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(249, 115, 22, 0.5);
+      box-shadow: 0 14px 38px rgba(0,0,0,0.5);
+    }
+    .fig-card img { width: 100%; height: auto; border-radius: 6px; }
+    .fig-card figcaption { text-align: left; margin-top: 12px; }
+
+    /* idea-cards (How it works) */
+    .idea-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 24px;
+    }
+    @media (max-width: 800px) { .idea-grid { grid-template-columns: 1fr; } }
+    .idea-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      transition: transform .25s ease, border-color .25s ease;
+    }
+    .idea-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(56, 189, 248, 0.45);
+    }
+    .idea-card .idea-tag {
+      display: inline-block;
+      font-size: 11px; font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 1.4px; text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .idea-card h3 { margin: 0 0 8px; font-size: 17px; color: var(--text); }
+    .idea-card p { margin: 0; color: var(--text-muted); font-size: 14px; line-height: 1.6; }
+
+    /* killer numbers row — secondary stats inside Speedup section */
+    .number-row {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 14px; margin: 24px 0 8px;
+    }
+    @media (max-width: 700px) { .number-row { grid-template-columns: repeat(2, 1fr); } }
+    .num-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 14px;
+      text-align: center;
+    }
+    .num-big {
+      display: block;
+      font-size: 32px; font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      letter-spacing: -0.5px;
+    }
+    .num-lbl {
+      display: block; margin-top: 6px;
+      color: var(--text-muted); font-size: 12px;
+      text-transform: uppercase; letter-spacing: 0.8px;
+    }
+
+    /* gradient divider between sections — overrides default 1px solid border-bottom */
+    .section { border-bottom: none; position: relative; }
+    .section::after {
+      content: ""; display: block;
+      position: absolute; left: 5%; right: 5%; bottom: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(249, 115, 22, 0.35), rgba(56, 189, 248, 0.35), transparent);
+    }
+
+    /* compact result table — overrides default whitespace nowrap */
+    .compact-tbl { width: 100%; border-collapse: collapse; font-size: 14px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+      overflow: hidden;
+    }
+    .compact-tbl th, .compact-tbl td {
+      padding: 10px 14px; text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+    .compact-tbl th:first-child, .compact-tbl td:first-child { text-align: left; }
+    .compact-tbl thead th {
+      background: var(--bg-elev); font-size: 12px;
+      text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);
+    }
+    .compact-tbl tbody tr:last-child td { border-bottom: none; }
+    .compact-tbl tbody tr:last-child td { color: var(--accent); font-weight: 700; }
+
+    /* scroll-triggered fade-in.
+       Default state is VISIBLE so headless screenshots and JS-disabled browsers always show content.
+       The animation only plays when JS adds .visible — giving a fade-in feel without ever hiding. */
+    .reveal { opacity: 1; transform: none; }
+    .reveal.visible { animation: feFadeUp 0.5s ease both; }
+    @keyframes feFadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* limitations card */
+    .limit-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--warn);
+      border-radius: 8px;
+      padding: 18px 22px;
+      color: var(--text-muted);
+      font-size: 14.5px; line-height: 1.65;
+    }
+    .limit-card strong { color: var(--warn); }
+
+    /* algorithms strip */
+    .algo-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 24px;
+      display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between;
+    }
+    .algo-card .algo-text { flex: 1 1 320px; color: var(--text-muted); font-size: 14.5px; line-height: 1.6; }
+    .algo-card .algo-text strong { color: var(--accent); }
+    .algo-stats {
+      display: grid; grid-template-columns: repeat(2, auto);
+      gap: 8px 22px; font-size: 13px;
+    }
+    .algo-stats .as-num {
+      font-size: 22px; font-weight: 700; color: var(--accent-2);
+      font-variant-numeric: tabular-nums;
+    }
+    .algo-stats .as-lbl {
+      color: var(--text-muted); font-size: 12px;
+      text-transform: uppercase; letter-spacing: 0.6px;
+    }
+    .algo-stats div { display: flex; flex-direction: column; align-items: center; }
+
+    /* paper section CTA size bump */
+    .paper-cta { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 28px; }
+    .paper-cta .btn { padding: 12px 22px; font-size: 15px; }
+
+    /* cite-copy badge "Copied!" flash */
+    .cite-copy.copied::after { content: " ✓"; }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container header-row">
+    <a class="brand" href="#top">
+      <svg class="brand-logo" viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="fe-h" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#f97316"/>
+            <stop offset="100%" stop-color="#38bdf8"/>
+          </linearGradient>
+        </defs>
+        <g fill="url(#fe-h)">
+          <!-- lightning bolt -->
+          <polygon points="55,8 22,56 46,56 38,92 78,42 54,42 62,8" />
+        </g>
+      </svg>
+      <span class="brand-name">FlashEvolve</span>
+    </a>
+    <nav class="nav">
+      <a href="#problem">Problem</a>
+      <a href="#idea">Idea</a>
+      <a href="#how">How</a>
+      <a href="#results">Results</a>
+      <a class="nav-gh" href="https://anonymous.4open.science/r/FlashEvolve-FEC7/" target="_blank" rel="noopener">Code</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="container hero-inner">
+      <h1>FlashEvolve</h1>
+      <p class="tagline">
+        An <strong>asynchronous worker-queue framework</strong> for LLM agent evolution —
+        <em>3.5× faster</em> than synchronous GEPA, with no algorithmic changes.
+      </p>
+      <p class="authors">
+        Anonymous Authors &nbsp;·&nbsp; UC San Diego · Georgia Tech
+      </p>
+
+      <div class="cta">
+        <a class="btn btn-primary" href="https://arxiv.org/pdf/2605.08520" target="_blank" rel="noopener">Read Paper (PDF)</a>
+        <a class="btn" href="https://anonymous.4open.science/r/FlashEvolve-FEC7/" target="_blank" rel="noopener">Code Repository</a>
+      </div>
+
+      <div class="hero-stats">
+        <div class="stat"><span class="stat-num" data-target="3.5" data-suffix="×">3.5×</span><span class="stat-label">Proposal speedup<br/>(vLLM, GEPA)</span></div>
+        <div class="stat"><span class="stat-num" data-target="4.9" data-suffix="×">4.9×</span><span class="stat-label">Proposal speedup<br/>(API serving)</span></div>
+        <div class="stat"><span class="stat-num" data-target="2.27" data-suffix="×">2.27×</span><span class="stat-label">Evolution rate<br/>(IFBench)</span></div>
+        <div class="stat"><span class="stat-num" data-target="4.7" data-suffix="×">4.7×</span><span class="stat-label">Speedup over<br/>Meta-Harness</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="container section reveal" id="problem">
+    <h2>The Problem</h2>
+    <p class="section-desc">
+      LLM-based agent evolution (GEPA, ACE, Meta-Harness) reflects on execution traces to refine prompts,
+      memories, and harness code — outperforming GRPO by <strong>6% on average</strong>. The catch:
+      a single GEPA step takes <em>~2 minutes</em>, and reaching a stable improvement takes
+      <strong>over 2 hours on an H100</strong>. Stages run <em>serially</em>, and within each stage,
+      a few long-tail requests hold up the entire batch.
+    </p>
+    <figure class="fig-card">
+      <img src="figures/Figure_1.png" alt="Sequential dependencies and sample imbalance in agent evolution" />
+      <figcaption>
+        <strong>Figure 1.</strong> Two compounding inefficiencies in synchronous agent evolution:
+        <em>sequential dependencies</em> between Rollout → Propose → Evaluate, and
+        <em>sample workload imbalance</em> within each stage. The whole batch waits for the slowest sample.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="container section reveal" id="idea">
+    <h2>The Idea</h2>
+    <p class="section-desc">
+      Treat the evolution loop as a set of LLM-heavy stages connected by <strong>asynchronous workers and queues</strong>.
+      Stages overlap. When artifacts go <em>stale</em> — produced before the pool was updated — repair them
+      in the <strong>language space</strong> instead of discarding them. Unlike RL weight-space staleness,
+      a stale prompt is <em>inspectable</em>: the same LLM that proposed it can also patch it.
+    </p>
+    <figure class="fig-card">
+      <img src="figures/Figure_3.png" alt="FlashEvolve framework overview" />
+      <figcaption>
+        <strong>Figure 3.</strong> FlashEvolve executes agent evolution with async workers and queues across stages.
+        Three staleness-handling policies (<em>Full</em>, <em>Guarded</em>, <em>Reflective Async</em>) plus
+        speculative stage completion and adaptive worker control keep throughput high without sacrificing convergence.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="container section reveal" id="how">
+    <h2>How It Works</h2>
+    <p class="section-desc">Three mechanisms working together:</p>
+    <div class="idea-grid">
+      <div class="idea-card">
+        <span class="idea-tag">01 · Pipeline</span>
+        <h3>Async Workers &amp; Queues</h3>
+        <p>
+          Each stage gets its own worker pool and queue. Rollout, propose, and evaluate
+          <strong>overlap</strong> across evolution steps. Queue items carry the artifact pool version
+          <em>v</em> so stale items can be detected.
+        </p>
+      </div>
+      <div class="idea-card">
+        <span class="idea-tag">02 · Repair</span>
+        <h3>Reflective Patching</h3>
+        <p>
+          When a stale prompt arrives, an LLM worker inspects it against the artifact history,
+          <strong>discards task-specific noise</strong>, and patches in transferable principles.
+          Reaches <em>94.3% validation</em> in 30 min on IFBench.
+        </p>
+      </div>
+      <div class="idea-card">
+        <span class="idea-tag">03 · Speculation</span>
+        <h3>Speculative Completion</h3>
+        <p>
+          Release partial output after an <em>α</em> fraction of a stage's requests finish — completed
+          samples flow downstream while long-tail requests continue in the background.
+          With <strong>α=0.25</strong>, validation throughput rises from 0.5 → <em>3.15 val/min</em>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="container section reveal" id="results">
+    <h2>Speedup Results</h2>
+    <p class="section-desc">
+      Measured on <strong>GEPA workloads</strong> with Qwen3-8B (vLLM, single H100) and GPT-4o-mini (API).
+      All baselines run on the same DSPy + vLLM stack — differences come from <em>pipeline</em>, not the LLM backend.
+    </p>
+
+    <figure class="fig-card">
+      <img src="figures/Figure_4.png" alt="Validation score over wall-clock time for GEPA, Combee, and FlashEvolve" />
+      <figcaption>
+        <strong>Figure 4.</strong> Validation score over wall-clock time (Qwen3-8B). FlashEvolve reaches
+        <em>91% on IFBench in 39.3 min</em> — Combee (B=40) takes <em>104 min</em> to hit the same region.
+        On HotpotQA, FlashEvolve maintains the highest score across the full 180-min budget.
+      </figcaption>
+    </figure>
+
+    <div class="number-row">
+      <div class="num-card"><span class="num-big">3.5×</span><span class="num-lbl">Proposal throughput<br/>vs GEPA (vLLM avg)</span></div>
+      <div class="num-card"><span class="num-big">4.9×</span><span class="num-lbl">Proposal throughput<br/>vs GEPA (API avg)</span></div>
+      <div class="num-card"><span class="num-big">11.4</span><span class="num-lbl">Proposals / min<br/>peak (AIME, vLLM)</span></div>
+      <div class="num-card"><span class="num-big">10.1</span><span class="num-lbl">Proposals / min<br/>peak (IFBench, API)</span></div>
+    </div>
+
+    <p class="section-desc" style="margin-top:28px;">
+      <strong>Validation-score / time budget (Qwen3-8B, 30 min):</strong>
+    </p>
+    <table class="compact-tbl">
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>IFBench</th>
+          <th>Norm. rate</th>
+          <th>HoVer</th>
+          <th>HotpotQA</th>
+          <th>AIME</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>GEPA</td><td>87.6</td><td>1.00×</td><td>39.8</td><td>63.3</td><td>10.0</td></tr>
+        <tr><td>Combee (K=10)</td><td>88.5</td><td>1.39×</td><td>41.2</td><td>62.5</td><td>10.0</td></tr>
+        <tr><td>Combee (K=40)</td><td>86.5</td><td>0.55×</td><td>40.5</td><td>58.6</td><td>10.0</td></tr>
+        <tr><td>FlashEvolve</td><td><strong>90.6</strong></td><td><strong>2.27×</strong></td><td><strong>42.0</strong></td><td>61.7</td><td><strong>15.0</strong></td></tr>
+      </tbody>
+    </table>
+    <p class="footnote">See the paper for full ablations on worker concurrency, speculative thresholds, and staleness policies.</p>
+  </section>
+
+  <section class="container section reveal">
+    <h2 id="limits">When It Fails</h2>
+    <div class="limit-card">
+      <strong>Async overhead dominates on tiny workloads.</strong>
+      FlashEvolve assumes per-stage requests can be packed into batches large enough to hide queue
+      bookkeeping. When the mini-batch is small or stages already finish in seconds, the
+      <em>per-item queue and version-tracking cost</em> can outweigh the overlap gain. Reflective patching
+      also depends on the LLM's ability to discriminate useful stale signal from noise — on workloads
+      where most stale items are conflicting (e.g. HotpotQA early steps), Full Async and Reflective Async
+      converge to similar scores within a 30-min budget.
+    </div>
+  </section>
+
+  <section class="container section reveal">
+    <h2 id="algos">Other Algorithms</h2>
+    <p class="section-desc">
+      The same async framework drops onto evolution algorithms beyond GEPA — <strong>ACE</strong>
+      (context playbook evolution) and <strong>Meta-Harness</strong> (harness-code evolution) — without
+      changing their semantics.
+    </p>
+    <div class="algo-card">
+      <div class="algo-text">
+        FlashEvolve raises Meta-Harness's proposal+validation throughput from
+        <strong>0.3 → 1.4 proposals/min</strong>, and accelerates ACE on FiNER and FormulaReasoning by similar margins.
+        Algorithm-agnostic: it sees a multi-stage loop with queueable intermediates and a shared artifact pool.
+      </div>
+      <div class="algo-stats">
+        <div><span class="as-num">4.7×</span><span class="as-lbl">Meta-Harness</span></div>
+        <div><span class="as-num">3×+</span><span class="as-lbl">ACE / FiNER</span></div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+<footer class="site-footer">
+  <div class="container footer-row">
+    <span>© 2026 FlashEvolve</span>
+    <span>
+      <a href="https://twitter.com/intent/tweet?text=FlashEvolve%3A%203.5%C3%97%20faster%20agent%20evolution%20via%20async%20stage%20orchestration&url=" target="_blank" rel="noopener">Share on X</a>
+      &nbsp;·&nbsp;
+      <a href="https://anonymous.4open.science/r/FlashEvolve-FEC7/" target="_blank" rel="noopener">Code</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+  // Scroll-triggered fade-in
+  (function() {
+    const els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) {
+      els.forEach(e => e.classList.add('visible'));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(en => {
+        if (en.isIntersecting) {
+          en.target.classList.add('visible');
+          io.unobserve(en.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    els.forEach(e => io.observe(e));
+  })();
+
+  // Hero stats: final values live in the HTML as static text — no count-up
+  // animation, since headless screenshot tools capture the page before
+  // requestAnimationFrame finishes.
+  
+</script>
+</body>
+</html>
