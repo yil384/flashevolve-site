@@ -358,19 +358,6 @@
   </section>
 
   <section class="container section reveal">
-    <h2 id="limits">When It Fails</h2>
-    <div class="limit-card">
-      <strong>Async overhead dominates on tiny workloads.</strong>
-      FlashEvolve assumes per-stage requests can be packed into batches large enough to hide queue
-      bookkeeping. When the mini-batch is small or stages already finish in seconds, the
-      <em>per-item queue and version-tracking cost</em> can outweigh the overlap gain. Reflective patching
-      also depends on the LLM's ability to discriminate useful stale signal from noise — on workloads
-      where most stale items are conflicting (e.g. HotpotQA early steps), Full Async and Reflective Async
-      converge to similar scores within a 30-min budget.
-    </div>
-  </section>
-
-  <section class="container section reveal">
     <h2 id="algos">Other Algorithms</h2>
     <p class="section-desc">
       The same async framework drops onto evolution algorithms beyond GEPA — <strong>ACE</strong>
